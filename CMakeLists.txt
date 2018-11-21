@@ -93,7 +93,8 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/src/PlannerRegistry.cpp"
 # Helper library.
 add_library(${PROJECT_NAME}
     src/OMPLConversions.cpp
-    src/OMPLPlanner.cpp
+    # src/OMPLPlanner.cpp
+    src/RedirectableOMPLPlanner.cpp
     src/OMPLSimplifier.cpp
     src/SemiToroidalStateSpace.cpp
     src/StateSpaces.cpp
