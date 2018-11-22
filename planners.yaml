@@ -19,6 +19,8 @@
   header: ompl/geometric/planners/prm/PRM.h
 - name: ompl::geometric::LazyPRM
   header: ompl/geometric/planners/prm/LazyPRM.h
+- name: ompl::geometric::LazyPRMstar
+  header: ompl/geometric/planners/prm/LazyPRMstar.h
 - name: ompl::geometric::PRMstar
   header: ompl/geometric/planners/prm/PRMstar.h
 - name: ompl::geometric::pRRT

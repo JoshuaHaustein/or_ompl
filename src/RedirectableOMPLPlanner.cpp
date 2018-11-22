@@ -44,7 +44,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ompl/base/goals/GoalStates.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/config.h>
+// need to include some planners here to because we need to be able to cast
 #include <ompl/geometric/planners/prm/LazyPRM.h>
+#include <ompl/geometric/planners/prm/PRM.h>
 #include <time.h>
 #include <tinyxml.h>
 
@@ -78,6 +80,10 @@ RedirectableOMPLPlanner::RedirectableOMPLPlanner(OpenRAVE::EnvironmentBasePtr pe
     RegisterCommand("GetReachedGoals",
         boost::bind(&RedirectableOMPLPlanner::GetReachedGoals, this, _1, _2),
         "get ids of reached goals in last plan");
+
+    RegisterCommand("IsSupportingGoalReset",
+        boost::bind(&RedirectableOMPLPlanner::IsSupportingGoalReset, this, _1, _2),
+        "Return whether the underlying planner supports goal resetting.");
 
     RegisterCommand("ResetGoals",
         boost::bind(&RedirectableOMPLPlanner::ResetGoals, this, _1, _2),
@@ -389,6 +395,7 @@ OpenRAVE::PlannerStatus RedirectableOMPLPlanner::PlanPath(OpenRAVE::TrajectoryBa
         BOOST_SCOPE_EXIT_END
 
         ompl::base::PlannerStatus ompl_status;
+        RAVELOG_DEBUG_FORMAT("Planner timeout is %f", m_parameters->m_timeLimit);
         ompl_status = m_simple_setup->solve(m_parameters->m_timeLimit);
 
         // Handle OMPL return codes, set planner_status and ptraj
@@ -545,6 +552,20 @@ bool RedirectableOMPLPlanner::GetReachedGoals(std::ostream& sout, std::istream& 
     return true;
 }
 
+bool RedirectableOMPLPlanner::IsSupportingGoalReset(std::ostream& sout, std::istream& sin) const
+{
+    if (!m_initialized) {
+        RAVELOG_ERROR("ResetGoals cannot be called before a plan has been initialized!\n");
+        return false;
+    }
+
+    auto planner_name = m_planner->getName();
+    bool supports_goal_reset = planner_name == "LazyPRM" or planner_name == "PRM"
+        or planner_name == "LazyPRMstar" or planner_name == "PRMstar";
+    sout << supports_goal_reset;
+    return true;
+}
+
 bool RedirectableOMPLPlanner::ResetGoals(std::ostream& sout, std::istream& sin)
 {
     typedef ompl::base::ScopedState<ompl::base::StateSpace> ScopedState;
@@ -559,15 +580,24 @@ bool RedirectableOMPLPlanner::ResetGoals(std::ostream& sout, std::istream& sin)
         return false;
     // set new goals
     auto planner = m_simple_setup->getPlanner();
-    auto lazy_prm_planner = std::dynamic_pointer_cast<ompl::geometric::LazyPRM>(planner);
-    if (lazy_prm_planner) {
-        lazy_prm_planner->clearQuery();
-        SetGoals(states);
-    } else {
-        RAVELOG_ERROR("Can not reset goals for the set planner type." + planner->getName());
-        return false;
+    { // LazyPRM and LazyPRM*
+        auto lazy_prm_planner = std::dynamic_pointer_cast<ompl::geometric::LazyPRM>(planner);
+        if (lazy_prm_planner) {
+            lazy_prm_planner->clearQuery();
+            SetGoals(states);
+            return true;
+        }
     }
-    return true;
+    { // PRM and PRM*
+        auto prm_planner = std::dynamic_pointer_cast<ompl::geometric::PRM>(planner);
+        if (prm_planner) {
+            prm_planner->clearQuery();
+            SetGoals(states);
+            return true;
+        }
+    }
+    RAVELOG_ERROR("Can not reset goals for the set planner type." + planner->getName());
+    return false;
 }
 
 bool RedirectableOMPLPlanner::AddWaypoints(std::ostream& sout, std::istream& sin)

@@ -73,6 +73,8 @@ public:
     // Define a couple of additional functions that allow placement planner to interact with motion planner
     // Get the goals that the planner has reached
     bool GetReachedGoals(std::ostream& sout, std::istream& sin) const;
+    // Query whether the selected planner supports resetting goals
+    bool IsSupportingGoalReset(std::ostream& sout, std::istream& sin) const;
     // Reset goals to new goals and stop planning for old ones
     bool ResetGoals(std::ostream& sout, std::istream& sin);
     // Add waypoints collision-free configurations that the planner might wanna use
