@@ -47,6 +47,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // need to include some planners here to because we need to be able to cast
 #include <ompl/geometric/planners/prm/LazyPRM.h>
 #include <ompl/geometric/planners/prm/PRM.h>
+#include <ompl/geometric/planners/prm/SPARS.h>
+#include <ompl/geometric/planners/prm/SPARStwo.h>
 #include <time.h>
 #include <tinyxml.h>
 
@@ -561,7 +563,8 @@ bool RedirectableOMPLPlanner::IsSupportingGoalReset(std::ostream& sout, std::ist
 
     auto planner_name = m_planner->getName();
     bool supports_goal_reset = planner_name == "LazyPRM" or planner_name == "PRM"
-        or planner_name == "LazyPRMstar" or planner_name == "PRMstar";
+        or planner_name == "LazyPRMstar" or planner_name == "PRMstar"
+        or planner_name == "SPARS" or planner_name == "SPARS2";
     sout << supports_goal_reset;
     return true;
 }
@@ -578,10 +581,8 @@ bool RedirectableOMPLPlanner::ResetGoals(std::ostream& sout, std::istream& sin)
     bool read_success = ReadStates(sin, states);
     if (!read_success)
         return false;
-    // set new goals
-    auto planner = m_simple_setup->getPlanner();
     { // LazyPRM and LazyPRM*
-        auto lazy_prm_planner = std::dynamic_pointer_cast<ompl::geometric::LazyPRM>(planner);
+        auto lazy_prm_planner = std::dynamic_pointer_cast<ompl::geometric::LazyPRM>(m_planner);
         if (lazy_prm_planner) {
             lazy_prm_planner->clearQuery();
             SetGoals(states);
@@ -589,14 +590,30 @@ bool RedirectableOMPLPlanner::ResetGoals(std::ostream& sout, std::istream& sin)
         }
     }
     { // PRM and PRM*
-        auto prm_planner = std::dynamic_pointer_cast<ompl::geometric::PRM>(planner);
+        auto prm_planner = std::dynamic_pointer_cast<ompl::geometric::PRM>(m_planner);
         if (prm_planner) {
             prm_planner->clearQuery();
             SetGoals(states);
             return true;
         }
     }
-    RAVELOG_ERROR("Can not reset goals for the set planner type." + planner->getName());
+    { // SPARS
+        auto spars_planner = std::dynamic_pointer_cast<ompl::geometric::SPARS>(m_planner);
+        if (spars_planner) {
+            spars_planner->clearQuery();
+            SetGoals(states);
+            return true;
+        }
+    }
+    { // SPARS2
+        auto spars_planner = std::dynamic_pointer_cast<ompl::geometric::SPARStwo>(m_planner);
+        if (spars_planner) {
+            spars_planner->clearQuery();
+            SetGoals(states);
+            return true;
+        }
+    }
+    RAVELOG_ERROR("Can not reset goals for the set planner type." + m_planner->getName());
     return false;
 }
 
@@ -671,20 +688,16 @@ bool RedirectableOMPLPlanner::ReadState(std::istream& sin, ompl::base::ScopedSta
 
 void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl::base::StateSpace>>& states)
 {
-
-    std::shared_ptr<ompl::base::GoalStates> ompl_goals = std::dynamic_pointer_cast<ompl::base::GoalStates>(m_simple_setup->getGoal());
-    if (!ompl_goals) { // we didn't have a multi-goal before
-        ompl_goals = std::make_shared<ompl::base::GoalStates>(m_simple_setup->getSpaceInformation());
-        m_simple_setup->setGoal(ompl_goals);
-    }
-    // remove old goals
-    ompl_goals->clear();
+    auto problem_def = m_planner->getProblemDefinition();
+    problem_def->clearGoal();
+    auto ompl_goals = std::make_shared<ompl::base::GoalStates>(m_simple_setup->getSpaceInformation());
     // add new goals
     for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
         ompl_goals->addState(states[igoal]);
         m_goal_states.add(boost::make_shared<StateWithId>(states[igoal], igoal));
     }
-    m_simple_setup->setGoal(ompl_goals);
+    problem_def->setGoal(ompl_goals);
+    m_planner->setProblemDefinition(problem_def);
 }
 
 } // namespace or_ompl
