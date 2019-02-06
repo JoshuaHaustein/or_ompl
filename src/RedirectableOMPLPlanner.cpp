@@ -49,6 +49,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ompl/geometric/planners/prm/PRM.h>
 #include <ompl/geometric/planners/prm/SPARS.h>
 #include <ompl/geometric/planners/prm/SPARStwo.h>
+#include <ompl/geometric/planners/rrt/RedirectableRRTConnect.h>
 #include <time.h>
 #include <tinyxml.h>
 
@@ -98,7 +99,6 @@ RedirectableOMPLPlanner::RedirectableOMPLPlanner(OpenRAVE::EnvironmentBasePtr pe
     RegisterCommand("GetReachedPoints",
         boost::bind(&RedirectableOMPLPlanner::GetReachedPoints, this, _1, _2),
         "Return all reached configurations");
-    m_goal_states.setDistanceFunction(StateWithId::distance);
 }
 
 RedirectableOMPLPlanner::~RedirectableOMPLPlanner()
@@ -203,7 +203,7 @@ bool RedirectableOMPLPlanner::InitPlan(OpenRAVE::RobotBasePtr robot,
         }
 
         // clear m_goal_states independent of the type of goals
-        m_goal_states.clear();
+        m_goal_states = boost::make_shared<StateHashMap>(m_state_space);
         RAVELOG_DEBUG("Setting goal configuration.\n");
         std::vector<TSRChain::Ptr> goal_chains;
         BOOST_FOREACH (TSRChain::Ptr tsr_chain, m_parameters->m_tsrchains) {
@@ -254,7 +254,7 @@ bool RedirectableOMPLPlanner::InitPlan(OpenRAVE::RobotBasePtr robot,
                 }
 
                 m_simple_setup->setGoalState(q_goal);
-                m_goal_states.add(boost::make_shared<StateWithId>(q_goal, 0));
+                m_goal_states->add(boost::make_shared<StateHashMap::StateWithId>(q_goal, 0));
             } else {
                 // if multiple possible goals specified,
                 // don't check them all (this might be expensive)
@@ -267,7 +267,7 @@ bool RedirectableOMPLPlanner::InitPlan(OpenRAVE::RobotBasePtr robot,
                         q_goal[i] = m_parameters->vgoalconfig[igoal * num_dof + i];
                     }
                     ompl_goals->as<ompl::base::GoalStates>()->addState(q_goal);
-                    m_goal_states.add(boost::make_shared<StateWithId>(q_goal, igoal));
+                    m_goal_states->add(boost::make_shared<StateHashMap::StateWithId>(q_goal, igoal));
                 }
                 m_simple_setup->setGoal(ompl_goals);
             }
@@ -544,10 +544,8 @@ bool RedirectableOMPLPlanner::GetReachedGoals(std::ostream& sout, std::istream& 
     if (m_simple_setup->haveSolutionPath()) {
         auto last_solution = m_simple_setup->getSolutionPath();
         auto end_state = last_solution.getState(last_solution.getStateCount() - 1);
-        auto query_state = boost::make_shared<StateWithId>(ScopedState(m_state_space), 0);
-        m_state_space->copyState(query_state->state.get(), end_state);
-        auto closest_input_goal = m_goal_states.nearest(query_state);
-        assert(m_state_space->distance(closest_input_goal->state.get(), query_state->state.get()) == 0.0);
+        auto closest_input_goal = m_goal_states->nearest(end_state);
+        assert(m_state_space->distance(closest_input_goal->state.get(), end_state) == 0.0);
         reached_goal_id = closest_input_goal->id;
     }
     sout << reached_goal_id;
@@ -564,7 +562,7 @@ bool RedirectableOMPLPlanner::IsSupportingGoalReset(std::ostream& sout, std::ist
     auto planner_name = m_planner->getName();
     bool supports_goal_reset = planner_name == "LazyPRM" or planner_name == "PRM"
         or planner_name == "LazyPRMstar" or planner_name == "PRMstar"
-        or planner_name == "SPARS" or planner_name == "SPARS2";
+        or planner_name == "SPARS" or planner_name == "SPARS2" or planner_name == "RedirectableRRTConnect";
     sout << supports_goal_reset;
     return true;
 }
@@ -609,6 +607,17 @@ bool RedirectableOMPLPlanner::ResetGoals(std::ostream& sout, std::istream& sin)
         auto spars_planner = std::dynamic_pointer_cast<ompl::geometric::SPARStwo>(m_planner);
         if (spars_planner) {
             spars_planner->clearQuery();
+            SetGoals(states);
+            return true;
+        }
+    }
+    { // RedirectableRRTConnnect
+        auto rrt_planner = std::dynamic_pointer_cast<ompl::geometric::RedirectableRRTConnect>(m_planner);
+        if (rrt_planner) {
+            if (m_simple_setup->haveSolutionPath()) {
+                auto pdef = rrt_planner->getProblemDefinition();
+                pdef->clearSolutionPaths();
+            }
             SetGoals(states);
             return true;
         }
@@ -691,10 +700,51 @@ void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl:
     auto problem_def = m_planner->getProblemDefinition();
     problem_def->clearGoal();
     auto ompl_goals = std::make_shared<ompl::base::GoalStates>(m_simple_setup->getSpaceInformation());
-    // add new goals
-    for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
-        ompl_goals->addState(states[igoal]);
-        m_goal_states.add(boost::make_shared<StateWithId>(states[igoal], igoal));
+
+    auto rrt_planner = std::dynamic_pointer_cast<ompl::geometric::RedirectableRRTConnect>(m_planner);
+    if (rrt_planner != nullptr) {
+        // we can't just clear a query here, but need to do some more work
+        // first figure out what goals the planner has started planning for already
+        std::vector<ompl::base::ScopedState<>> in_tree_goals;
+        rrt_planner->getGoals(in_tree_goals);
+        StateHashMap state_map(m_state_space);
+        state_map.add(states);
+        std::vector<ompl::base::ScopedState<>> to_remove;
+        std::vector<ompl::base::ScopedState<>> to_keep;
+        for (auto& old_goal : in_tree_goals) {
+            if (state_map.contains(old_goal)) {
+                to_keep.push_back(old_goal);
+            } else {
+                to_remove.push_back(old_goal);
+            }
+        }
+        // tell planner to get rid of old goals
+        rrt_planner->removeGoals(to_remove);
+        // finally filter the actual new goals are
+        state_map.clear();
+        state_map.add(to_keep);
+        std::vector<ompl::base::ScopedState<>> truly_new_goals;
+        for (auto& state : states) {
+            if (!state_map.contains(state)) {
+                truly_new_goals.push_back(state);
+            }
+        }
+        // add truly new goals to ompl goals
+        for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
+            ompl_goals->addState(states[igoal]);
+        }
+        // add all goals to m_goal_states for identification
+        m_goal_states->clear();
+        for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
+            m_goal_states->add(boost::make_shared<StateHashMap::StateWithId>(states[igoal], igoal));
+        }
+    } else {
+        m_goal_states->clear();
+        // add new goals
+        for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
+            ompl_goals->addState(states[igoal]);
+            m_goal_states->add(boost::make_shared<StateHashMap::StateWithId>(states[igoal], igoal));
+        }
     }
     problem_def->setGoal(ompl_goals);
     m_planner->setProblemDefinition(problem_def);

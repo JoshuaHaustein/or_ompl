@@ -51,6 +51,94 @@ namespace or_ompl {
 
 typedef boost::function<ompl::base::Planner*(ompl::base::SpaceInformationPtr)> PlannerFactory;
 
+class StateHashMap {
+public:
+    // store current goals here to easily identify them when we have a solution
+    struct StateWithId {
+        ompl::base::ScopedState<ompl::base::StateSpace> state;
+        unsigned int id;
+        StateWithId(const ompl::base::ScopedState<ompl::base::StateSpace>& istate, unsigned int iid)
+            : state(istate)
+            , id(iid)
+        {
+        }
+        static double distance(const boost::shared_ptr<StateWithId>& a, const boost::shared_ptr<StateWithId>& b)
+        {
+            assert(a->state.getSpace() == b->state.getSpace());
+            return a->state.getSpace()->distance(a->state.get(), b->state.get());
+        }
+    };
+    StateHashMap(ompl::base::StateSpacePtr state_space)
+    {
+        gnat.setDistanceFunction(StateWithId::distance);
+        query_state = boost::make_shared<StateWithId>(ompl::base::ScopedState<>(state_space), 0);
+    }
+    ~StateHashMap() = default;
+
+    void add(const boost::shared_ptr<StateWithId>& state)
+    {
+        gnat.add(state);
+    }
+
+    void add(const std::vector<ompl::base::ScopedState<>>& states) // adds the given states without useful ids!
+    {
+        for (auto& state : states) {
+            auto new_state = boost::make_shared<StateWithId>(state, 0);
+            add(new_state);
+        }
+    }
+
+    void remove(boost::shared_ptr<StateWithId>& state)
+    {
+        gnat.remove(state);
+    }
+
+    bool contains(boost::shared_ptr<StateWithId>& state)
+    {
+        auto nearest_state = nearest(state);
+        return StateWithId::distance(state, nearest_state) == 0.0;
+    }
+
+    bool contains(ompl::base::ScopedState<>& state)
+    {
+        auto nearest_state = nearest(state);
+        auto space = query_state->state.getSpace();
+        return space->distance(state.get(), nearest_state->state.get()) == 0.0;
+    }
+
+    boost::shared_ptr<StateWithId> nearest(const ompl::base::State* state)
+    {
+        auto space = query_state->state.getSpace();
+        space->copyState(query_state->state.get(), state);
+        return gnat.nearest(query_state);
+    }
+
+    boost::shared_ptr<StateWithId> nearest(const ompl::base::ScopedState<>& state)
+    {
+        return nearest(state.get());
+    }
+
+    boost::shared_ptr<StateWithId> nearest(const boost::shared_ptr<StateWithId>& state)
+    {
+        return nearest(state->state);
+    }
+
+    boost::shared_ptr<StateWithId> nearest(const StateWithId& state)
+    {
+        return nearest(state.state);
+    }
+
+    void clear()
+    {
+        gnat.clear();
+    }
+
+    ompl::NearestNeighborsGNATNoThreadSafety<boost::shared_ptr<StateWithId>> gnat;
+
+private:
+    boost::shared_ptr<StateWithId> query_state;
+};
+
 class RedirectableOMPLPlanner : public OpenRAVE::PlannerBase {
 public:
     RedirectableOMPLPlanner(OpenRAVE::EnvironmentBasePtr penv,
@@ -99,22 +187,7 @@ private:
     OpenRAVE::RobotBasePtr m_robot;
     OpenRAVE::CollisionReportPtr m_collisionReport;
     double m_totalPlanningTime;
-    // store current goals here to easily identify them when we have a solution
-    struct StateWithId {
-        ompl::base::ScopedState<ompl::base::StateSpace> state;
-        unsigned int id;
-        StateWithId(const ompl::base::ScopedState<ompl::base::StateSpace>& istate, unsigned int iid)
-            : state(istate)
-            , id(iid)
-        {
-        }
-        static double distance(const boost::shared_ptr<StateWithId>& a, const boost::shared_ptr<StateWithId>& b)
-        {
-            assert(a->state.getSpace() == b->state.getSpace());
-            return a->state.getSpace()->distance(a->state.get(), b->state.get());
-        }
-    };
-    ompl::NearestNeighborsGNATNoThreadSafety<boost::shared_ptr<StateWithId>> m_goal_states;
+    boost::shared_ptr<StateHashMap> m_goal_states;
 
     ompl::base::PlannerPtr CreatePlanner(OMPLPlannerParameters const& params);
 

@@ -31,6 +31,8 @@
   header: ompl/geometric/planners/rrt/RRT.h
 - name: ompl::geometric::RRTConnect
   header: ompl/geometric/planners/rrt/RRTConnect.h
+- name: ompl::geometric::RedirectableRRTConnect
+  header: ompl/geometric/planners/rrt/RedirectableRRTConnect.h
 - name: ompl::geometric::RRTstar
   header: ompl/geometric/planners/rrt/RRTstar.h
 - name: ompl::geometric::SBL
