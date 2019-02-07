@@ -95,12 +95,16 @@ public:
 
     bool contains(boost::shared_ptr<StateWithId>& state)
     {
+        if (gnat.size() == 0)
+            return false;
         auto nearest_state = nearest(state);
         return StateWithId::distance(state, nearest_state) == 0.0;
     }
 
     bool contains(ompl::base::ScopedState<>& state)
     {
+        if (gnat.size() == 0)
+            return false;
         auto nearest_state = nearest(state);
         auto space = query_state->state.getSpace();
         return space->distance(state.get(), nearest_state->state.get()) == 0.0;

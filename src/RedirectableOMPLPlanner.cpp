@@ -659,12 +659,14 @@ bool RedirectableOMPLPlanner::ReadStates(std::istream& sin, std::vector<ompl::ba
     }
     ScopedState new_state(m_state_space);
     bool all_good = true;
-    while (all_good) {
+    bool finished = false;
+    while (all_good and not finished) {
         all_good = ReadState(sin, new_state);
         if (all_good) {
             states.push_back(new_state);
             sin >> c;
-            all_good = c == ',';
+            all_good = c == ',' or c == ']';
+            finished = c == ']';
         }
     }
     return all_good;
@@ -730,10 +732,10 @@ void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl:
             }
         }
         // add truly new goals to ompl goals
-        for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
-            ompl_goals->addState(states[igoal]);
+        for (unsigned int igoal = 0; igoal < truly_new_goals.size(); igoal++) {
+            ompl_goals->addState(truly_new_goals[igoal]);
         }
-        // add all goals to m_goal_states for identification
+        // add all goals to m_goal_states for identification purposes
         m_goal_states->clear();
         for (unsigned int igoal = 0; igoal < states.size(); igoal++) {
             m_goal_states->add(boost::make_shared<StateHashMap::StateWithId>(states[igoal], igoal));
