@@ -47,6 +47,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <or_ompl/OMPLPlannerParameters.h>
 #include <or_ompl/StateSpaces.h>
 
+// #include <iostream>
+
 namespace or_ompl {
 
 typedef boost::function<ompl::base::Planner*(ompl::base::SpaceInformationPtr)> PlannerFactory;
@@ -97,8 +99,7 @@ public:
     {
         if (gnat.size() == 0)
             return false;
-        auto nearest_state = nearest(state);
-        return StateWithId::distance(state, nearest_state) == 0.0;
+        return contains(state->state);
     }
 
     bool contains(ompl::base::ScopedState<>& state)
@@ -106,8 +107,15 @@ public:
         if (gnat.size() == 0)
             return false;
         auto nearest_state = nearest(state);
+        // printouts
+        // std::cout << "Distance between ";
+        // nearest_state->state.getSpace()->printState(nearest_state->state.get());
+        // std::cout << " and ";
+        // state.getSpace()->printState(state.get());
         auto space = query_state->state.getSpace();
-        return space->distance(state.get(), nearest_state->state.get()) == 0.0;
+        float dist = space->distance(state.get(), nearest_state->state.get());
+        // std::cout << " is " << dist;
+        return dist <= space->getLongestValidSegmentLength();
     }
 
     boost::shared_ptr<StateWithId> nearest(const ompl::base::State* state)

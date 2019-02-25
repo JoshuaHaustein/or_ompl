@@ -53,6 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <time.h>
 #include <tinyxml.h>
 
+// #include <iostream>
 #include <or_ompl/OMPLConversions.h>
 #include <or_ompl/PlannerRegistry.h>
 #include <or_ompl/RedirectableOMPLPlanner.h>
@@ -408,11 +409,12 @@ OpenRAVE::PlannerStatus RedirectableOMPLPlanner::PlanPath(OpenRAVE::TrajectoryBa
                 ToORTrajectory(m_robot, m_simple_setup->getSolutionPath(), ptraj);
                 if (ompl_status == ompl::base::PlannerStatus::EXACT_SOLUTION) {
                     planner_status = OpenRAVE::PS_HasSolution;
+                    RAVELOG_INFO("Found a path");
                 } else {
                     planner_status = OpenRAVE::PS_InterruptedWithSolution;
                 }
             } else {
-                RAVELOG_ERROR("Planner returned %s, but no path found!\n", ompl_status.asString().c_str());
+                RAVELOG_WARN("Planner returned %s, but no path found!\n", ompl_status.asString().c_str());
                 planner_status = OpenRAVE::PS_Failed;
             }
 
@@ -426,7 +428,7 @@ OpenRAVE::PlannerStatus RedirectableOMPLPlanner::PlanPath(OpenRAVE::TrajectoryBa
             // - PlannerStatus::TIMEOUT
             // (these cases are not handled explicitly because different versions
             //  of OMPL support different error cases)
-            RAVELOG_ERROR("Planner returned %s.\n", ompl_status.asString().c_str());
+            RAVELOG_WARN("Planner returned %s.\n", ompl_status.asString().c_str());
             planner_status = OpenRAVE::PS_Failed;
         }
 
@@ -709,6 +711,7 @@ void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl:
         // first figure out what goals the planner has started planning for already
         std::vector<ompl::base::ScopedState<>> in_tree_goals;
         rrt_planner->getGoals(in_tree_goals);
+        // std::cout << "The motion planner has currently " << in_tree_goals.size() << " goals" << std::endl;
         StateHashMap state_map(m_state_space);
         state_map.add(states);
         std::vector<ompl::base::ScopedState<>> to_remove;
@@ -716,13 +719,19 @@ void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl:
         for (auto& old_goal : in_tree_goals) {
             if (state_map.contains(old_goal)) {
                 to_keep.push_back(old_goal);
+                // std::cout << "Keeping the following goal" << std::endl;
+                // m_state_space->printState(old_goal.get());
             } else {
                 to_remove.push_back(old_goal);
+                // std::cout << "Removing the following goal" << std::endl;
+                // m_state_space->printState(old_goal.get());
             }
         }
+        // std::cout << "Going to remove " << to_remove.size() << " goals" << std::endl;
+        // std::cout << "Going to keep " << to_keep.size() << " goals" << std::endl;
         // tell planner to get rid of old goals
         rrt_planner->removeGoals(to_remove);
-        // finally filter the actual new goals are
+        // finally filter the actual new goals
         state_map.clear();
         state_map.add(to_keep);
         std::vector<ompl::base::ScopedState<>> truly_new_goals;
@@ -731,6 +740,7 @@ void RedirectableOMPLPlanner::SetGoals(std::vector<ompl::base::ScopedState<ompl:
                 truly_new_goals.push_back(state);
             }
         }
+        // std::cout << "We have " << truly_new_goals.size() << " new goals." << std::endl;
         // add truly new goals to ompl goals
         for (unsigned int igoal = 0; igoal < truly_new_goals.size(); igoal++) {
             ompl_goals->addState(truly_new_goals[igoal]);
