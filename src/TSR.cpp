@@ -58,6 +58,14 @@ TSR::TSR(
     _Tw_e_inv = _Tw_e.inverse();
 }
 
+std::string TSR::relative_body_name() const {
+    return _relative_body_name;
+}
+
+std::string TSR::relative_link_name() const {
+    return _relative_link_name;
+}
+
 bool TSR::deserialize(std::stringstream &ss)
 {
     return deserialize(static_cast<std::istream &>(ss));
