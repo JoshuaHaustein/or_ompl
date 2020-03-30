@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ompl/util/Exception.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <or_ompl/SemiToroidalStateSpace.h>
+#include <boost/lexical_cast.hpp>
 
 or_ompl::SemiToroidalStateSpace::SemiToroidalStateSpace(unsigned int dim):
    ompl::base::RealVectorStateSpace(dim),
@@ -129,7 +130,7 @@ void or_ompl::SemiToroidalStateSpace::interpolate(const ompl::base::State *from,
       }
       else
       {
-         
+
          double diam = bounds_.high[i] - bounds_.low[i];
          double from = rfrom->values[i];
          double to = rto->values[i];

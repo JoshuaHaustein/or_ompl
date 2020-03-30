@@ -5,7 +5,7 @@ include(CheckCXXSourceCompiles)
 
 find_package(catkin REQUIRED cmake_modules openrave_catkin)
 find_package(Boost REQUIRED COMPONENTS chrono system)
-find_package(OMPL REQUIRED)
+find_package(ompl REQUIRED)
 find_package(OpenRAVE REQUIRED)
 find_package(TinyXML REQUIRED)
 find_package(Eigen REQUIRED)
